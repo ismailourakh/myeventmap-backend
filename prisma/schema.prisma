@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(PARTICIPANT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  events       Event[]  @relation("UserEvents")
+  application OrganizerApplication?
+  approvedApplications OrganizerApplication[] @relation("ApplicationApprovedBy")
+}
+
+model OrganizerApplication {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  message   String?
+  status    OrganizerApplicationStatus @default(PENDING)
+
+  approvedByAdminId String?
+  approvedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user             User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedByAdmin  User? @relation("ApplicationApprovedBy", fields: [approvedByAdminId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([approvedByAdminId])
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  title       String
+  description String?
+  location    String?
+  startDate   DateTime
+  endDate     DateTime
+  status      EventStatus @default(DRAFT)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  organizerId String
+  organizer   User        @relation("UserEvents", fields: [organizerId], references: [id])
+
+  @@index([organizerId])
+  @@index([status, startDate])
+}
+
+enum UserRole {
+  PARTICIPANT
+  ORGANIZER
+  ADMIN
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum OrganizerApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
