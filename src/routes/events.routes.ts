@@ -13,18 +13,51 @@ const idParamSchema = z.object({
 /**
  * ORGANIZER/ADMIN: list my events (any status)
  * GET /events/mine
- *
- * IMPORTANT: This must come BEFORE the /:id route below!
  */
 eventsRouter.get("/mine", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (req, res) => {
   const events = await prisma.event.findMany({
-    where: {
-      organizerId: req.user!.id,
-    },
+    where: { organizerId: req.user!.id },
     orderBy: { createdAt: "desc" },
+    include: { _count: { select: { bookings: true } } },
   });
 
-  return res.json({ events });
+  return res.json({
+    events: events.map((event) => ({
+      ...event,
+      seatsLeft: event.availableSeats,
+      bookingsCount: event._count.bookings,
+    })),
+  });
+});
+
+/**
+ * ORGANIZER/ADMIN: get one of my events by id
+ * GET /events/mine/:id
+ */
+eventsRouter.get("/mine/:id", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (req, res) => {
+  const p = idParamSchema.safeParse(req.params);
+  if (!p.success) return res.status(400).json({ message: "Invalid id" });
+  const { id } = p.data;
+
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: { _count: { select: { bookings: true } } },
+  });
+
+  if (!event) return res.status(404).json({ message: "Event not found" });
+
+  const isAdmin = req.user!.role === "ADMIN";
+  if (!isAdmin && event.organizerId !== req.user!.id) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  return res.json({
+    event: {
+      ...event,
+      seatsLeft: event.availableSeats,
+      bookingsCount: event._count.bookings,
+    },
+  });
 });
 
 /**
@@ -60,6 +93,7 @@ eventsRouter.get("/", async (req, res) => {
               { title: { contains: q, mode: "insensitive" } },
               { description: { contains: q, mode: "insensitive" } },
               { location: { contains: q, mode: "insensitive" } },
+              { postcode: { contains: q, mode: "insensitive" } },
             ],
           }
         : {}),
@@ -67,10 +101,17 @@ eventsRouter.get("/", async (req, res) => {
     orderBy: { startDate: "asc" },
     include: {
       organizer: { select: { id: true, name: true, email: true } },
+      _count: { select: { bookings: true } },
     },
   });
 
-  return res.json({ events });
+  return res.json({
+    events: events.map((event) => ({
+      ...event,
+      seatsLeft: event.availableSeats,
+      bookingsCount: event._count.bookings,
+    })),
+  });
 });
 
 /**
@@ -84,24 +125,108 @@ eventsRouter.get("/:id", async (req, res) => {
 
   const event = await prisma.event.findFirst({
     where: { id, status: "PUBLISHED" },
-    include: { organizer: { select: { id: true, name: true, email: true } } },
+    include: {
+      organizer: { select: { id: true, name: true, email: true } },
+      _count: { select: { bookings: true } },
+    },
   });
 
   if (!event) return res.status(404).json({ message: "Event not found" });
-  return res.json({ event });
+
+  return res.json({
+    event: {
+      ...event,
+      seatsLeft: event.availableSeats,
+      bookingsCount: event._count.bookings,
+    },
+  });
 });
 
 /**
- * ORGANIZER/ADMIN: create event (defaults to DRAFT from schema)
+ * AUTHENTICATED USER: book a ticket for a published event
+ * POST /events/:id/book
+ */
+eventsRouter.post("/:id/book", requireAuth, async (req, res) => {
+  const p = idParamSchema.safeParse(req.params);
+  if (!p.success) return res.status(400).json({ message: "Invalid id" });
+  const { id } = p.data;
+
+  try {
+    const booking = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT *
+        FROM "Event"
+        WHERE id = ${id}
+        FOR UPDATE
+      `;
+
+      const currentEvent = rows[0];
+      if (!currentEvent || currentEvent.status !== "PUBLISHED") {
+        throw new Error("EVENT_NOT_FOUND");
+      }
+
+      const existing = await tx.booking.findUnique({
+        where: {
+          userId_eventId: {
+            userId: req.user!.id,
+            eventId: id,
+          },
+        },
+      });
+
+      if (existing) throw new Error("ALREADY_BOOKED");
+      if (currentEvent.availableSeats <= 0) throw new Error("EVENT_FULL");
+
+      await tx.event.update({
+        where: { id },
+        data: {
+          availableSeats: { decrement: 1 },
+        },
+      });
+
+      return tx.booking.create({
+        data: {
+          userId: req.user!.id,
+          eventId: id,
+        },
+        include: {
+          event: {
+            select: {
+              id: true,
+              title: true,
+              location: true,
+              postcode: true,
+              startDate: true,
+            },
+          },
+        },
+      });
+    });
+
+    return res.status(201).json({ booking });
+  } catch (err: any) {
+    if (err.message === "EVENT_NOT_FOUND") return res.status(404).json({ message: "Event not found" });
+    if (err.message === "EVENT_FULL") return res.status(400).json({ message: "Event is fully booked" });
+    if (err.message === "ALREADY_BOOKED") return res.status(400).json({ message: "You already booked this event" });
+    return res.status(500).json({ message: "Booking failed" });
+  }
+});
+
+/**
+ * ORGANIZER/ADMIN: create event
  * POST /events
  */
 eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (req, res) => {
   const bodySchema = z.object({
     title: z.string().min(3),
     description: z.string().max(2000).optional(),
+    imageUrl: z.string().url().optional(),
     location: z.string().max(255).optional(),
+    postcode: z.string().max(20).optional(),
+    includesFood: z.coerce.boolean().optional(),
     startDate: z.string().datetime(),
     endDate: z.string().datetime(),
+    capacity: z.coerce.number().int().positive(),
     status: z.enum(["DRAFT", "PUBLISHED", "CANCELLED"]).optional(),
   });
 
@@ -110,7 +235,7 @@ eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (re
     return res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
   }
 
-  const { title, description, location, startDate, endDate, status } = parsed.data;
+  const { title, description, imageUrl, location, postcode, includesFood, startDate, endDate, capacity, status } = parsed.data;
 
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -120,9 +245,14 @@ eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (re
     data: {
       title,
       description: description ?? null,
+      imageUrl: imageUrl ?? null,
       location: location ?? null,
+      postcode: postcode ?? null,
+      includesFood: includesFood ?? false,
       startDate: start,
       endDate: end,
+      capacity,
+      availableSeats: capacity,
       status: status ?? "DRAFT",
       organizerId: req.user!.id,
     },
@@ -144,9 +274,13 @@ eventsRouter.put("/:id", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (
   const bodySchema = z.object({
     title: z.string().min(3).optional(),
     description: z.string().max(2000).nullable().optional(),
+    imageUrl: z.string().url().nullable().optional(),
     location: z.string().max(255).nullable().optional(),
+    postcode: z.string().max(20).nullable().optional(),
+    includesFood: z.coerce.boolean().optional(),
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().optional(),
+    capacity: z.coerce.number().int().positive().optional(),
     status: z.enum(["DRAFT", "PUBLISHED", "CANCELLED"]).optional(),
   });
 
@@ -167,17 +301,31 @@ eventsRouter.put("/:id", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (
   const nextEnd = parsed.data.endDate ? new Date(parsed.data.endDate) : existing.endDate;
   if (nextEnd <= nextStart) return res.status(400).json({ message: "endDate must be after startDate" });
 
+  const nextCapacity = parsed.data.capacity ?? existing.capacity;
+  const bookedCount = await prisma.booking.count({ where: { eventId: id } });
+  const nextAvailableSeats = Math.max(0, nextCapacity - bookedCount);
+
   const event = await prisma.event.update({
     where: { id },
     data: {
       ...parsed.data,
       startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
       endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
+      availableSeats: parsed.data.capacity !== undefined ? nextAvailableSeats : undefined,
     },
-    include: { organizer: { select: { id: true, name: true, email: true } } },
+    include: {
+      organizer: { select: { id: true, name: true, email: true } },
+      _count: { select: { bookings: true } },
+    },
   });
 
-  return res.json({ event });
+  return res.json({
+    event: {
+      ...event,
+      seatsLeft: event.availableSeats,
+      bookingsCount: event._count.bookings,
+    },
+  });
 });
 
 /**
@@ -199,4 +347,32 @@ eventsRouter.delete("/:id", requireAuth, requireRole("ORGANIZER", "ADMIN"), asyn
 
   await prisma.event.delete({ where: { id } });
   return res.status(204).send();
+});
+
+/**
+ * ORGANIZER/ADMIN: attendees of one event
+ * GET /events/:id/attendees
+ */
+eventsRouter.get("/:id/attendees", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (req, res) => {
+  const p = idParamSchema.safeParse(req.params);
+  if (!p.success) return res.status(400).json({ message: "Invalid id" });
+  const { id } = p.data;
+
+  const event = await prisma.event.findUnique({ where: { id } });
+  if (!event) return res.status(404).json({ message: "Event not found" });
+
+  const isAdmin = req.user!.role === "ADMIN";
+  if (!isAdmin && event.organizerId !== req.user!.id) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  const attendees = await prisma.booking.findMany({
+    where: { eventId: id },
+    orderBy: { createdAt: "asc" },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  return res.json({ attendees });
 });
