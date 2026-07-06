@@ -220,7 +220,6 @@ eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (re
   const bodySchema = z.object({
     title: z.string().min(3),
     description: z.string().max(2000).optional(),
-    imageUrl: z.string().url().optional(),
     location: z.string().max(255).optional(),
     postcode: z.string().max(20).optional(),
     includesFood: z.coerce.boolean().optional(),
@@ -235,7 +234,7 @@ eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (re
     return res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
   }
 
-  const { title, description, imageUrl, location, postcode, includesFood, startDate, endDate, capacity, status } = parsed.data;
+  const { title, description, location, postcode, includesFood, startDate, endDate, capacity, status } = parsed.data;
 
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -245,7 +244,6 @@ eventsRouter.post("/", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (re
     data: {
       title,
       description: description ?? null,
-      imageUrl: imageUrl ?? null,
       location: location ?? null,
       postcode: postcode ?? null,
       includesFood: includesFood ?? false,
@@ -274,7 +272,6 @@ eventsRouter.put("/:id", requireAuth, requireRole("ORGANIZER", "ADMIN"), async (
   const bodySchema = z.object({
     title: z.string().min(3).optional(),
     description: z.string().max(2000).nullable().optional(),
-    imageUrl: z.string().url().nullable().optional(),
     location: z.string().max(255).nullable().optional(),
     postcode: z.string().max(20).nullable().optional(),
     includesFood: z.coerce.boolean().optional(),
