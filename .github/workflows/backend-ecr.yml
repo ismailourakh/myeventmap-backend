@@ -6,6 +6,10 @@ on:
 
 jobs:
   push-ecr:
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ticketing_db
+      JWT_SECRET: MYEVENTMAPJWTSECRET123456789
+      PORT: 3000
     runs-on: ubuntu-latest
     permissions:
       contents: read
