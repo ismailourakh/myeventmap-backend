@@ -11,7 +11,16 @@ async function main() {
 
   if (!databaseUrl) throw new Error("DATABASE_URL missing");
 
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
+
+pool.on("error", (err) => {
+  console.error(err);
+});
   const adapter = new PrismaPg(pool);
   const prisma = new PrismaClient({ adapter });
 

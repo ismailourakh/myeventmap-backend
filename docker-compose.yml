@@ -24,7 +24,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/myeventmap
+      DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: MYEVENTMAPJWTSECRET123456789
       ADMIN_EMAIL: admin@myeventmap.com
       ADMIN_PASSWORD: Admin123!

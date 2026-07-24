@@ -1,17 +1,16 @@
-FROM node:20-alpine
+FROM node:20-alpine:latest
 
 WORKDIR /app
-
 COPY package*.json ./
 RUN npm ci
-
 COPY . .
 
-# Needed only so prisma generate succeeds at build time
-ENV DATABASE_URL="postgresql://postgres:postgres@postgres:5432/myeventmap"
+# build-time only so prisma generate won't fail ( just a placeholder for db, main db will override by AWS App Runner vars env)
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 
 RUN npx prisma generate
 
-EXPOSE 3000
+RUN npm run build
 
+EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]

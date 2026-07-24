@@ -7,58 +7,53 @@ datasource db {
 }
 
 model User {
-  id                    String                 @id @default(uuid())
-  name                  String
-  email                 String                 @unique
-  passwordHash          String
-  role                  UserRole               @default(PARTICIPANT)
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-
-  events                Event[]
-  application           OrganizerApplication?
-  approvedApplications  OrganizerApplication[] @relation("ApplicationApprovedBy")
-  bookings              Booking[]
+  id                   String                 @id @default(uuid())
+  name                 String
+  email                String                 @unique
+  passwordHash         String
+  role                 UserRole               @default(PARTICIPANT)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  bookings             Booking[]
+  events               Event[]
+  approvedApplications OrganizerApplication[] @relation("ApplicationApprovedBy")
+  application          OrganizerApplication?
 }
 
 model OrganizerApplication {
-  id                String                      @id @default(uuid())
-  userId            String                      @unique
+  id                String                     @id @default(uuid())
+  userId            String                     @unique
   message           String?
-  status            OrganizerApplicationStatus  @default(PENDING)
-
-  approvedByAdminId String?
+  status            OrganizerApplicationStatus @default(PENDING)
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
   approvedAt        DateTime?
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  approvedByAdmin   User? @relation("ApplicationApprovedBy", fields: [approvedByAdminId], references: [id])
+  approvedByAdminId String?
+  approvedByAdmin   User?                      @relation("ApplicationApprovedBy", fields: [approvedByAdminId], references: [id])
+  user              User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
   @@index([approvedByAdminId])
 }
 
 model Event {
-  id              String      @id @default(uuid())
-  title           String
-  description     String?
-  location        String?
-  postcode        String?
-  mapUrl          String?
-  includesFood    Boolean     @default(false)
-  startDate       DateTime
-  endDate         DateTime
-  status          EventStatus @default(DRAFT)
-  capacity        Int
-  availableSeats  Int
-  organizerId     String
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  organizer       User        @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-  bookings        Booking[]
+  id             String      @id @default(uuid())
+  title          String
+  description    String?
+  location       String?
+  startDate      DateTime
+  endDate        DateTime
+  status         EventStatus @default(DRAFT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  organizerId    String
+  capacity       Int
+  availableSeats Int
+  includesFood   Boolean     @default(false)
+  postcode       String?
+  mapUrl         String?
+  bookings       Booking[]
+  organizer      User        @relation(fields: [organizerId], references: [id], onDelete: Cascade)
 
   @@index([status, startDate])
   @@index([organizerId])
@@ -70,9 +65,8 @@ model Booking {
   userId    String
   eventId   String
   createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, eventId])
   @@index([eventId])
