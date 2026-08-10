@@ -36,3 +36,29 @@ jobs:
         run: |
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY_URI }}:${{ github.sha }}
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY_URI }}:latest
+          
+      - name: Delete old ECR images (keep latest 2)
+        run: |
+          REPO_NAME=$(basename ${{ secrets.ECR_REPOSITORY_URI }})
+
+          aws ecr describe-images \
+            --repository-name "$REPO_NAME" \
+            --region ${{ secrets.AWS_REGION }} \
+            --query 'sort_by(imageDetails,&imagePushedAt)[::-1]' \
+            --output json > images.json
+
+          TOTAL=$(jq 'length' images.json)
+          echo "Total image versions: $TOTAL"
+
+          if [ "$TOTAL" -gt 2 ]; then
+            DIGESTS_TO_DELETE=$(jq -r '.[2:][].imageDigest' images.json)
+            for DIGEST in $DIGESTS_TO_DELETE; do
+              echo "Deleting old image digest: $DIGEST"
+              aws ecr batch-delete-image \
+                --repository-name "$REPO_NAME" \
+                --region ${{ secrets.AWS_REGION }} \
+                --image-ids imageDigest="$DIGEST"
+            done
+          else
+            echo "2 or fewer versions exist, nothing to delete."
+          fi
