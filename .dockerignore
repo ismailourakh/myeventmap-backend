@@ -3,3 +3,5 @@ npm-debug.log
 .env.local
 .git
 .gitignore
+/certs
+/.github

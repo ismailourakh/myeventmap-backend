@@ -7,6 +7,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 async function main() {
   const email = process.env.ADMIN_EMAIL ?? "admin@myeventmap.com";
   const password = process.env.ADMIN_PASSWORD ?? "Admin123!";
+  //const databaseUrl = process.env.LOCAL_DATABASE_URL;
   const databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) throw new Error("DATABASE_URL missing");

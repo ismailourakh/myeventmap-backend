@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const connectionString = process.env.DATABASE_URL;
+//const connectionString = process.env.LOCAL_DATABASE_URL;
 if (!connectionString) {
   throw new Error("DATABASE_URL is missing. Check your .env file.");
 }

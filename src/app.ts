@@ -12,8 +12,14 @@ import { meRouter } from "./routes/me.routes";
 export const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(
+  cors({
+    origin: "*",
+    methods: "*",
+    allowedHeaders: "*",
+    credentials: false,
+  })
+);app.use(express.json());
 
 app.use("/organizer-applications", organizerApplicationsRouter);
 app.use("/admin", adminRouter);
